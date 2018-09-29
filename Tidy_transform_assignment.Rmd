@@ -1,0 +1,92 @@
+---
+title: "Assignment – Tidying and Transforming Data"
+author: "Chester Poon"
+date: "9/27/2018"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+---
+
+
+## Creating the CSV & Reading It In
+
+Our first step to create our csv file, which I've created as an exact replica of the image in our assignment description.
+Our next step is to load in our libraries (dplyr, tidyr) and then read in the messy csv file.  We'll also load ggplot2 for the analysis portion of this assignment and the "zoo" library for reasons I'll explain later.
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(zoo)
+flights_mess <- read.csv('flights.csv')
+flights_mess
+```
+
+##Manipulating and Tidying the Data
+
+From the above dataframe, we can see that it's quite messy.  First we'll rearrange the data from "wide-to-long" using tidyr's `gather()` function.  Let's take a brief look to see what it looks like now.
+
+```{r}
+flights <- gather(flights_mess, "City", "n", 3:7)
+
+flights
+```
+
+We can see that because we had the empty row spacer in the messy data set, there are null rows for our count.  We can filter that out.  While we're at it, let's also rename our airline and flight status columns appropriately while using dplyr's pipes.
+
+```{r}
+flights <- flights %>%
+  filter(!is.na(n)) %>%
+  rename(Airline = X, Status = X.1)
+flights
+```
+
+Now we have one more thing to fix.  For every "delayed" status, we have no value for airline, which is an artifact of the messy dataset.  Let's fix that.  What we need to do is fill each empty cell with the previous cell that is not empty to appropriately assign the right airline to the delayed status.
+I couldn't find anything that could do this specifically with tidyr or dplyr, so I went to the internet and found a library called "zoo".  I use `na.locf(.)` to solve my problem. Before I use that function, I still need to fill the empty Airline cells in the dataframe with null values.
+
+```{r}
+flights[flights$Airline=="","Airline"] <- NA
+flights <- flights %>%
+  do(na.locf(.))
+flights
+```
+
+##Analysis of Flight Status
+
+Now that our data is in the long format, we can feed the data into ggplot2 for some simple data analysis. From viewing the dataset, it would be intuitive to compare flight status (delayed or on time) between the airlines by city.  Let's do that using two side-by-side bar plots.
+
+```{r}
+
+f <- ggplot(flights, aes(x = City,y = n))
+f + geom_bar(stat = "sum", position="dodge", aes(fill = Status)) +
+  guides(colour = "colorbar",size = "none") +
+  facet_grid(. ~ Airline) +
+  theme(axis.title.y = element_blank(),
+        axis.text.x = element_text(angle = 90, hjust = 1))
+  
+```
+
+This is nice and gives us a basic picture, but doesn't answer the question posed by the assignment.  The assignment is asking us to be able to compare delayed arrival times for the airlines.  This would be best accomplished by looking at the proportion of delayed arrivals over all arrivals by city and airline.  While thinking about this, I realize I could still do a better job rearranging the data for this type of analysis.
+
+So, let's go back to the data frame, arrange it so that `delayed` and `on time` have their own columns, and add some calculated columns to be able to better plot our data in ggplot2 for proportion.
+
+```{r}
+flights <- flights %>%
+  spread(Status,n) %>%
+  mutate(total = delayed + `on time`, `delay rate` = delayed / total)
+
+flights
+```
+
+Now our dataset is prepared for delay rate analysis between the airlines by city.
+
+```{r}
+delays <- ggplot(flights,aes(x = City, y = `delay rate`))
+delays + geom_bar(stat = "identity", position="dodge", aes(fill = Airline))
+```
+
+From the visualization above, it seems clear that for every city, AM West has proportionally more delayed arrivals than Alaska airlines.  
+
+##Conclusion
+
+If we were to decide on which is the better airline I would argue that Alaska Airlines would be the better choice.  It's true that there is a higher frequency of flights with AM West suggesting that there is more choice with that airline.  However, I would personally still prefer a higher likelihood that I would arrive on time with Alaska Airlines.
